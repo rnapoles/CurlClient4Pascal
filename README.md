@@ -103,5 +103,5 @@ https://httpbin.org) or pass any base URL as the first argument.
 * Configure a client before sharing it between threads; `Execute` itself is thread-safe.
 * Not included: multipart/form-data, async/multi interface, progress/cancel callbacks.
 * Validation status: the full suite (71 unit + 41 integration tests, 3 examples) was
-  executed with **FPC 3.2.2 on Linux x86-64**. The Delphi code path and `.bat` scripts
+  executed with **FPC 3.2.2 on Linux/Windows x86-64**. The Delphi code path and `.bat` scripts
   were written to the same dialect rules but **not compiled or run** in this environment.
