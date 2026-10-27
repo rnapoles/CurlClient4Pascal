@@ -94,6 +94,19 @@ test.bat  [fpc|delphi]     [win32|win64]
 Run the examples against the internet instead: `build\fpc\bin\Example.Get` (defaults to
 https://httpbin.org) or pass any base URL as the first argument.
 
+## Curl in Windows
+
+```
+git clone --depth 1 https://github.com/Microsoft/vcpkg
+cd vcpkg
+bootstrap-vcpkg.bat
+vcpkg integrate install
+vcpkg install curl[tool]
+cd installed\x64-windows\tools\curl\
+copy libcurl.dll my-project
+copy z.dll my-project
+```
+
 ## Notes and limits
 
 * Hold clients in `IHttpClient` variables (reference counted); never keep a bare
