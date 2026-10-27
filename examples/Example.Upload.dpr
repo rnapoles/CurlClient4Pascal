@@ -3,6 +3,7 @@ program Example_Upload;
     1. multipart/form-data  - text fields + a file + in-memory bytes
     2. UploadFile shortcut  - one file, one line
     3. raw file upload      - PutFile (the file IS the request body)
+    4. any TStream          - PutStream / UploadStream (memory, compressed, DB blob...)
   Files are streamed from disk, so memory use stays flat for huge files.
 
   Usage: Example_Upload [baseUrl] [uploadPath]
@@ -36,6 +37,8 @@ var
   Client: IHttpClient;
   Response: IHttpResponse;
   Thumbnail: TBytes;
+  Payload: TMemoryStream;
+  Text: AnsiString;
   I: Integer;
 begin
   if ParamCount > 0 then BaseUrl := ParamStr(1) else BaseUrl := 'https://httpbin.org';
@@ -83,12 +86,39 @@ begin
       Response := Client.PutFile(PutPath, LogoFile);             // Content-Type: text/csv
       WriteLn('3) PutFile        -> HTTP ', Response.EnsureSuccess.StatusCode);
 
+      // ---- 4. upload from ANY TStream ------------------------------------
+      // The stream is not owned: you free it. Data is read from its current
+      // Position to the end, and the Position is restored afterwards.
+      Payload := TMemoryStream.Create;
+      try
+        Text := 'header-to-skip|{"generated":"in memory"}';
+        Payload.WriteBuffer(Text[1], Length(Text));
+        Payload.Position := Length('header-to-skip|');       // skip the prefix
+
+        Response := Client.PutStream(PutPath, Payload, 'application/json');
+        WriteLn('4a) PutStream     -> HTTP ', Response.EnsureSuccess.StatusCode);
+
+        // Same stream as one part of a multipart form (position was restored)
+        Response := Client.UploadStream(PostPath, 'attachment', 'generated.json', Payload);
+        WriteLn('4b) UploadStream  -> HTTP ', Response.EnsureSuccess.StatusCode);
+
+        // or mixed with other parts in a hand-built request
+        Response := Client.Execute(
+          Client.NewRequest(hmPost, PostPath)
+            .AddMultipartField('kind', 'mixed')
+            .AddMultipartStream('payload', 'p.json', Payload)
+            .AddMultipartFile('report', ReportFile));
+        WriteLn('4c) mixed parts   -> HTTP ', Response.EnsureSuccess.StatusCode);
+      finally
+        Payload.Free;
+      end;
+
       // Errors are explicit: a missing file is reported before any network I/O
       try
         Client.UploadFile(PostPath, 'file', 'C:\does\not\exist.bin');
       except
         on E: EHttpError do
-          WriteLn('4) missing file   -> ', E.Message);
+          WriteLn('5) missing file   -> ', E.Message);
       end;
     except
       on E: ECurlError do

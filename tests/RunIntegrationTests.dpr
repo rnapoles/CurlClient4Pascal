@@ -11,7 +11,7 @@ uses
   Test.Curl.Get, Test.Curl.PostBody, Test.Curl.PutPatchDelete, Test.Curl.Head,
   Test.Curl.RequestHeaders, Test.Curl.ResponseHeaders, Test.Curl.Timeout,
   Test.Curl.HttpVersion, Test.Curl.Redirect, Test.Curl.StatusCodes, Test.Curl.Cookies, Test.Curl.Gzip,
-  Test.Curl.MultipartUpload, Test.Curl.RawFileUpload, Test.Curl.UploadFileVanished,
+  Test.Curl.MultipartUpload, Test.Curl.RawFileUpload, Test.Curl.UploadFileVanished, Test.Curl.StreamUpload,
   Test.Curl.ResponseStream, Test.Curl.MaxResponseBytes, Test.Curl.Concurrency;
 
 begin

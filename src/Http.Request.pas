@@ -17,7 +17,7 @@ const
 function HttpMethodToString(Method: THttpMethod): string;
 
 type
-  THttpMultipartPartKind = (mpField, mpFile, mpBytes);
+  THttpMultipartPartKind = (mpField, mpFile, mpBytes, mpStream);
 
   { One part of a multipart/form-data body. }
   THttpMultipartPart = record
@@ -27,6 +27,7 @@ type
     FileName: string;      // file name announced to the server (mpFile, mpBytes)
     ContentType: string;   // part Content-Type ('' for plain fields)
     Data: TBytes;          // mpBytes only
+    Stream: TStream;       // mpStream only (not owned by the request)
   end;
   THttpMultipartParts = array of THttpMultipartPart;
 
@@ -41,6 +42,7 @@ type
     function GetResponseStream: TStream;
     function GetMultipartParts: THttpMultipartParts;
     function GetBodyFilePath: string;
+    function GetBodyStream: TStream;
 
     { --- fluent configuration (each returns the same request) --- }
     function SetMethod(Value: THttpMethod): IHttpRequest;
@@ -63,12 +65,21 @@ type
       Body = the content of a local file, streamed from disk (never loaded
       into memory). Content-Type defaults to a guess from the extension. }
     function SetBodyFile(const FilePath: string; const ContentType: string = ''): IHttpRequest;
+    { Body = the rest of AStream, from its Position at send time to its end.
+      The stream must be seekable, is NOT owned (you free it), must stay alive
+      until Execute returns, and its Position is restored afterwards so the
+      same request can be sent again. Content-Type defaults to
+      application/octet-stream. }
+    function SetBodyStream(AStream: TStream; const ContentType: string = ''): IHttpRequest;
     { ---- multipart/form-data (call any number of times, in any mix) ----
       Replaces a plain/JSON/form body; Content-Type + boundary are generated. }
     function AddMultipartField(const Name, Value: string): IHttpRequest;
     function AddMultipartFile(const FieldName, FilePath: string;
       const FileName: string = ''; const ContentType: string = ''): IHttpRequest;
     function AddMultipartBytes(const FieldName, FileName: string; const Data: TBytes;
+      const ContentType: string = ''): IHttpRequest;
+    { A part fed from AStream (same rules as SetBodyStream). FileName may be ''. }
+    function AddMultipartStream(const FieldName, FileName: string; AStream: TStream;
       const ContentType: string = ''): IHttpRequest;
     { Streams the response body into AStream (not owned) instead of memory. }
     function SaveResponseTo(AStream: TStream): IHttpRequest;
@@ -83,6 +94,7 @@ type
     property ResponseStream: TStream read GetResponseStream;
     property MultipartParts: THttpMultipartParts read GetMultipartParts;
     property BodyFilePath: string read GetBodyFilePath;
+    property BodyStream: TStream read GetBodyStream;
   end;
 
   THttpRequest = class(TInterfacedObject, IHttpRequest)
@@ -97,6 +109,7 @@ type
     FResponseStream: TStream;
     FParts: THttpMultipartParts;
     FBodyFilePath: string;
+    FBodyStream: TStream;
     function GetMethod: THttpMethod;
     function GetUrl: string;
     function GetHeaders: THttpHeaders;
@@ -106,6 +119,7 @@ type
     function GetResponseStream: TStream;
     function GetMultipartParts: THttpMultipartParts;
     function GetBodyFilePath: string;
+    function GetBodyStream: TStream;
     procedure ClearBody;
     procedure AppendPart(const Part: THttpMultipartPart);
     procedure DropNonMultipartContentType;
@@ -125,10 +139,13 @@ type
     function SetTimeout(Milliseconds: Integer): IHttpRequest;
     function SetConnectTimeout(Milliseconds: Integer): IHttpRequest;
     function SetBodyFile(const FilePath: string; const ContentType: string = ''): IHttpRequest;
+    function SetBodyStream(AStream: TStream; const ContentType: string = ''): IHttpRequest;
     function AddMultipartField(const Name, Value: string): IHttpRequest;
     function AddMultipartFile(const FieldName, FilePath: string;
       const FileName: string = ''; const ContentType: string = ''): IHttpRequest;
     function AddMultipartBytes(const FieldName, FileName: string; const Data: TBytes;
+      const ContentType: string = ''): IHttpRequest;
+    function AddMultipartStream(const FieldName, FileName: string; AStream: TStream;
       const ContentType: string = ''): IHttpRequest;
     function SaveResponseTo(AStream: TStream): IHttpRequest;
     function Clone: IHttpRequest;
@@ -225,12 +242,18 @@ begin
   Result := FBodyFilePath;
 end;
 
+function THttpRequest.GetBodyStream: TStream;
+begin
+  Result := FBodyStream;
+end;
+
 { Only one kind of body can be active: last writer wins. }
 procedure THttpRequest.ClearBody;
 begin
   SetLength(FBody, 0);
   FForm := '';
   FBodyFilePath := '';
+  FBodyStream := nil;
   SetLength(FParts, 0);
 end;
 
@@ -257,6 +280,7 @@ begin
     SetLength(FBody, 0);
     FForm := '';
     FBodyFilePath := '';
+    FBodyStream := nil;
   end;
   SetLength(FParts, Length(FParts) + 1);
   FParts[High(FParts)] := Part;
@@ -298,6 +322,7 @@ begin
   P.FileName := '';
   P.ContentType := '';
   SetLength(P.Data, 0);
+  P.Stream := nil;
   AppendPart(P);
   Result := Self;
 end;
@@ -316,6 +341,7 @@ begin
   if FileName <> '' then P.FileName := FileName else P.FileName := ExtractFileName(FilePath);
   if ContentType <> '' then P.ContentType := ContentType else P.ContentType := GuessContentType(P.FileName);
   SetLength(P.Data, 0);
+  P.Stream := nil;
   ValidatePartText('field name', P.Name);
   ValidatePartText('file name', P.FileName);
   ValidatePartText('content type', P.ContentType);
@@ -335,6 +361,42 @@ begin
   P.FileName := FileName;
   if ContentType <> '' then P.ContentType := ContentType else P.ContentType := GuessContentType(FileName);
   P.Data := Data;
+  P.Stream := nil;
+  ValidatePartText('field name', P.Name);
+  ValidatePartText('file name', P.FileName);
+  ValidatePartText('content type', P.ContentType);
+  AppendPart(P);
+  Result := Self;
+end;
+
+function THttpRequest.SetBodyStream(AStream: TStream; const ContentType: string): IHttpRequest;
+begin
+  if AStream = nil then
+    raise EHttpError.Create('SetBodyStream: stream must not be nil');
+  ClearBody;
+  FBodyStream := AStream;
+  if ContentType <> '' then
+    FHeaders.SetValue('Content-Type', ContentType)
+  else
+    FHeaders.SetValue('Content-Type', 'application/octet-stream');
+  Result := Self;
+end;
+
+function THttpRequest.AddMultipartStream(const FieldName, FileName: string;
+  AStream: TStream; const ContentType: string): IHttpRequest;
+var
+  P: THttpMultipartPart;
+begin
+  if FieldName = '' then raise EHttpError.Create('Multipart field name must not be empty');
+  if AStream = nil then
+    raise EHttpError.Create('AddMultipartStream: stream must not be nil');
+  P.Kind := mpStream;
+  P.Name := FieldName;
+  P.Value := '';
+  P.FileName := FileName;
+  if ContentType <> '' then P.ContentType := ContentType else P.ContentType := GuessContentType(FileName);
+  SetLength(P.Data, 0);
+  P.Stream := AStream;
   ValidatePartText('field name', P.Name);
   ValidatePartText('file name', P.FileName);
   ValidatePartText('content type', P.ContentType);
@@ -440,6 +502,7 @@ begin
   C.FResponseStream := FResponseStream;
   C.FParts := FParts;                // shared; parts are never mutated in place
   C.FBodyFilePath := FBodyFilePath;
+  C.FBodyStream := FBodyStream;      // same (non-owned) stream
 end;
 
 end.

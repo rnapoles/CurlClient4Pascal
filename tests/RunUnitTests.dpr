@@ -12,7 +12,7 @@ uses
   Test.Cookies.Jar, Test.Cookies.HeaderBuilding, Test.Cookies.SetCookieParsing,
   Test.Utils.ContentTypeGuess,
   Test.Request.Fluent, Test.Request.Multipart, Test.Request.BodyFile,
-  Test.Client.UploadHelpers,
+  Test.Client.UploadHelpers, Test.Request.BodyStream, Test.Client.StreamHelpers,
   Test.Response.StatusHelpers, Test.Response.TextDecoding,
   Test.Client.DefaultHeaders, Test.Client.BaseUrl, Test.Client.InvalidUrl,
   Test.Client.Auth, Test.Client.CookieSending, Test.Client.CookieStoring,

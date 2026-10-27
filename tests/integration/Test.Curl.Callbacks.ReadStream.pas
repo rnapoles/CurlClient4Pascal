@@ -39,7 +39,23 @@ begin
     finally Src.Free; end;
   finally M.Free; end;
 end;
+procedure TestNonOwnedStreamPositionRestored;
+var M: TMemoryStream; Src: TCurlBodySource; Buf: array[0..7] of Byte; S: AnsiString;
+begin
+  M := TMemoryStream.Create;
+  try
+    S := 'abcdef';
+    M.WriteBuffer(S[1], 6);
+    M.Position := 2;
+    Src := TCurlBodySource.Create(M, False);
+    CurlReadCallback(@Buf[0], 1, 4, Src);
+    Src.Free;                              // not owned: stream must survive...
+    CheckEqualsInt(2, M.Position, '...and be left where it was found');
+  finally M.Free; end;
+end;
+
 initialization
   RegisterTest('Curl.Callbacks.ReadStream', 'reads from the stream position to its end', TestReadsFromStreamPosition);
   RegisterTest('Curl.Callbacks.ReadStream', 'seek repositions the underlying stream', TestSeekRewindsStream);
+  RegisterTest('Curl.Callbacks.ReadStream', 'non-owned stream position is restored on release', TestNonOwnedStreamPositionRestored);
 end.

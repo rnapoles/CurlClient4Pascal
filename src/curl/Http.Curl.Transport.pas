@@ -101,7 +101,7 @@ begin
     Easy.SetBool(CURLOPT_VERBOSE, True);
 end;
 
-{ Raw body: an in-memory buffer, or a local file streamed from disk. }
+{ Raw body: an in-memory buffer, a caller-owned stream, or a local file. }
 function TCurlHttpClient.CreateBodySource(const Request: IHttpRequest): TCurlBodySource;
 var
   Stream: TFileStream;
@@ -111,7 +111,9 @@ begin
     Result := nil;                       // multipart uses TCurlMime instead
     Exit;
   end;
-  if Request.BodyFilePath <> '' then
+  if Request.BodyStream <> nil then
+    Result := TCurlBodySource.Create(Request.BodyStream, False)   // caller keeps ownership
+  else if Request.BodyFilePath <> '' then
   begin
     try
       Stream := TFileStream.Create(Request.BodyFilePath, fmOpenRead or fmShareDenyWrite);
@@ -144,6 +146,8 @@ begin
                    Parts[I].ContentType);
         mpBytes: Result.AddBytes(Parts[I].Name, Parts[I].FileName, Parts[I].Data,
                    Parts[I].ContentType);
+        mpStream: Result.AddStream(Parts[I].Name, Parts[I].FileName, Parts[I].Stream,
+                   Parts[I].ContentType);
       end;
   except
     Result.Free;
@@ -158,7 +162,8 @@ var
   HasBody, SendsBody: Boolean;
 begin
   Method := Request.Method;
-  HasBody := (Mime <> nil) or (Request.BodyFilePath <> '') or (Length(Request.Body) > 0);
+  HasBody := (Mime <> nil) or (Request.BodyFilePath <> '') or (Request.BodyStream <> nil) or
+    (Length(Request.Body) > 0);
 
   if (Method in [hmGet, hmHead]) and HasBody then
     raise EHttpError.CreateFmt('%s requests cannot have a body', [HttpMethodToString(Method)]);

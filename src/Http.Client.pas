@@ -14,7 +14,7 @@ unit Http.Client;
 interface
 
 uses
-  SysUtils, Http.Utils, Http.Errors, Http.Headers, Http.Cookies, Http.Request,
+  SysUtils, Classes, Http.Utils, Http.Errors, Http.Headers, Http.Cookies, Http.Request,
   Http.Response, Http.Options, Http.Transport;
 
 const
@@ -76,6 +76,13 @@ type
     { PUT with the raw content of a file as body (streamed from disk).
       ContentType '' = guessed from the file extension. }
     function PutFile(const Url, FilePath: string; const ContentType: string = ''): IHttpResponse;
+    { Same, but the data comes from the rest of AStream (not owned, seekable;
+      see IHttpRequest.SetBodyStream). }
+    function PutStream(const Url: string; AStream: TStream;
+      const ContentType: string = ''): IHttpResponse;
+    { multipart/form-data POST with a single part fed from AStream. }
+    function UploadStream(const Url, FieldName, FileName: string; AStream: TStream;
+      const ContentType: string = ''): IHttpResponse;
 
     property Headers: THttpHeaders read GetHeaders;
     property Cookies: THttpCookieJar read GetCookies;
@@ -139,6 +146,10 @@ type
     function PostForm(const Url: string; const NameValuePairs: array of string): IHttpResponse;
     function UploadFile(const Url, FieldName, FilePath: string): IHttpResponse;
     function PutFile(const Url, FilePath: string; const ContentType: string = ''): IHttpResponse;
+    function PutStream(const Url: string; AStream: TStream;
+      const ContentType: string = ''): IHttpResponse;
+    function UploadStream(const Url, FieldName, FileName: string; AStream: TStream;
+      const ContentType: string = ''): IHttpResponse;
   end;
 
   { ---- Builder ---- }
@@ -500,6 +511,19 @@ end;
 function THttpClient.PutFile(const Url, FilePath, ContentType: string): IHttpResponse;
 begin
   Result := Execute(NewRequest(hmPut, Url).SetBodyFile(FilePath, ContentType));
+end;
+
+function THttpClient.PutStream(const Url: string; AStream: TStream;
+  const ContentType: string): IHttpResponse;
+begin
+  Result := Execute(NewRequest(hmPut, Url).SetBodyStream(AStream, ContentType));
+end;
+
+function THttpClient.UploadStream(const Url, FieldName, FileName: string;
+  AStream: TStream; const ContentType: string): IHttpResponse;
+begin
+  Result := Execute(NewRequest(hmPost, Url)
+    .AddMultipartStream(FieldName, FileName, AStream, ContentType));
 end;
 
 { THttpClientBuilder }

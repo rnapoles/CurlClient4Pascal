@@ -13,6 +13,9 @@ function MakeTempFile(const Name: string; Size: Integer): string;
 { Sum of all bytes of the pattern file, mod 2^32 (matches echo_server.py). }
 function PatternSum(Size: Integer): Int64;
 procedure DeleteTempFile(const Path: string);
+{ In-memory stream: PrefixBytes of $FF junk followed by Size pattern bytes,
+  Position = 0. Uploading from Position = PrefixBytes yields PatternSum(Size). }
+function MakePatternStream(Size: Integer; PrefixBytes: Integer = 0): TMemoryStream;
 
 implementation
 
@@ -57,6 +60,22 @@ end;
 procedure DeleteTempFile(const Path: string);
 begin
   if FileExists(Path) then DeleteFile(Path);
+end;
+
+function MakePatternStream(Size: Integer; PrefixBytes: Integer): TMemoryStream;
+var
+  I: Integer;
+  B: Byte;
+begin
+  Result := TMemoryStream.Create;
+  B := $FF;
+  for I := 1 to PrefixBytes do Result.WriteBuffer(B, 1);
+  for I := 0 to Size - 1 do
+  begin
+    B := PatternByte(I);
+    Result.WriteBuffer(B, 1);
+  end;
+  Result.Position := 0;
 end;
 
 end.

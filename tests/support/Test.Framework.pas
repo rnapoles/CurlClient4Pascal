@@ -33,7 +33,7 @@ procedure CheckRaises(AClass: ExceptClass; Proc: TTestProc; const Msg: string = 
 { Asserts that Json contains  "Key": "Value"  (string field, any nesting). }
 procedure CheckJsonField(const Json, Key, Value: string);
 { Asserts that Json contains  "Key": <Value>  (number field). }
-procedure CheckJsonNumber(const Json, Key: string; Value: Int64);
+procedure CheckJsonNumber(const Json, Key: string; Value: Int64; const Msg: string = '');
 
 { Base URL of the local echo server (env HTTP_TEST_BASE_URL).
   Marks the test as skipped when it is not configured. }
@@ -131,13 +131,13 @@ begin
     Fail(Format('JSON field %s not found in %s', [Needle, Json]));
 end;
 
-procedure CheckJsonNumber(const Json, Key: string; Value: Int64);
+procedure CheckJsonNumber(const Json, Key: string; Value: Int64; const Msg: string);
 var
   Needle: string;
 begin
   Needle := Chr(34) + Key + Chr(34) + ': ' + IntToStr(Value);
   if Pos(Needle, Json) = 0 then
-    Fail(Format('JSON number %s not found in %s', [Needle, Json]));
+    Fail(Format('JSON number %s not found in %s %s', [Needle, Json, Msg]));
 end;
 
 function IntegrationBaseUrl: string;

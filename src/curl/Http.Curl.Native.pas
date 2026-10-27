@@ -96,12 +96,16 @@ type
     FSources: array of TCurlBodySource;
     function NewPart(const Name: string): Pcurl_mimepart;
     procedure SetPartStr(Part: Pcurl_mimepart; Kind: Integer; const Value: string);
+    procedure AddSource(const Name, FileName, ContentType: string; Source: TCurlBodySource);
   public
     constructor Create(Easy: TCurlEasy);
     destructor Destroy; override;
     procedure AddField(const Name, Value: string);
     procedure AddFile(const Name, FilePath, FileName, ContentType: string);
     procedure AddBytes(const Name, FileName: string; const Data: TBytes;
+      const ContentType: string);
+    { AStream is NOT owned: its position is restored when the mime is freed. }
+    procedure AddStream(const Name, FileName: string; AStream: TStream;
       const ContentType: string);
     property Handle: Pcurl_mime read FMime;
   end;
@@ -304,7 +308,17 @@ end;
 
 destructor TCurlBodySource.Destroy;
 begin
-  if FOwnsStream then FStream.Free;
+  if FStream <> nil then
+  begin
+    if FOwnsStream then
+      FStream.Free
+    else
+      try
+        FStream.Position := FStart;   // leave a caller-owned stream where we found it
+      except
+        // a stream that cannot seek back is simply left as is
+      end;
+  end;
   inherited Destroy;
 end;
 
@@ -493,11 +507,24 @@ begin
   if ContentType <> '' then SetPartStr(Part, 1, ContentType);
 end;
 
-procedure TCurlMime.AddFile(const Name, FilePath, FileName, ContentType: string);
+procedure TCurlMime.AddSource(const Name, FileName, ContentType: string;
+  Source: TCurlBodySource);
 var
   Part: Pcurl_mimepart;
+begin
+  SetLength(FSources, Length(FSources) + 1);
+  FSources[High(FSources)] := Source;      // owned from here on
+  Part := NewPart(Name);
+  CurlCheck(curl_mime_data_cb(Part, Source.Size,
+    curl_read_callback(@CurlReadCallback), curl_seek_callback(@CurlSeekCallback),
+    nil, Pointer(Source)), 'curl_mime_data_cb');
+  if FileName <> '' then SetPartStr(Part, 0, FileName);
+  if ContentType <> '' then SetPartStr(Part, 1, ContentType);
+end;
+
+procedure TCurlMime.AddFile(const Name, FilePath, FileName, ContentType: string);
+var
   Stream: TFileStream;
-  Source: TCurlBodySource;
 begin
   // The file is read through a Pascal stream (full Unicode path support on
   // Windows) and fed to libcurl chunk by chunk: memory use stays constant.
@@ -507,15 +534,13 @@ begin
     on E: EStreamError do
       raise EHttpError.CreateFmt('Cannot open upload file "%s": %s', [FilePath, E.Message]);
   end;
-  Source := TCurlBodySource.Create(Stream, True);
-  SetLength(FSources, Length(FSources) + 1);
-  FSources[High(FSources)] := Source;      // owned from here on
-  Part := NewPart(Name);
-  CurlCheck(curl_mime_data_cb(Part, Source.Size,
-    curl_read_callback(@CurlReadCallback), curl_seek_callback(@CurlSeekCallback),
-    nil, Pointer(Source)), 'curl_mime_data_cb');
-  if FileName <> '' then SetPartStr(Part, 0, FileName);
-  if ContentType <> '' then SetPartStr(Part, 1, ContentType);
+  AddSource(Name, FileName, ContentType, TCurlBodySource.Create(Stream, True));
+end;
+
+procedure TCurlMime.AddStream(const Name, FileName: string; AStream: TStream;
+  const ContentType: string);
+begin
+  AddSource(Name, FileName, ContentType, TCurlBodySource.Create(AStream, False));
 end;
 
 { ===== 4. slist ===== }
