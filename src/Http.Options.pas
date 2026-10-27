@@ -6,6 +6,13 @@ unit Http.Options;
 interface
 
 type
+  { Preferred HTTP protocol version.
+      hvDefault  libcurl decides (HTTP/2 over TLS when available)
+      hvHttp1    force HTTP/1.0
+      hvHttp1_1  force HTTP/1.1
+      hvHttp2    HTTP/2 for https, falls back to HTTP/1.1 (and plain http uses 1.1)
+      hvHttp3    try HTTP/3 (QUIC), falls back to older versions; raises ECurlError
+                 if the libcurl build has no HTTP/3 support }
   THttpVersion = (hvDefault, hvHttp1, hvHttp1_1, hvHttp2, hvHttp3);
 
   THttpClientOptions = record

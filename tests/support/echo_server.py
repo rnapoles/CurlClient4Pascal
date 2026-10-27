@@ -89,6 +89,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path in ("/echo", "/get", "/post", "/put", "/patch", "/delete"):  # httpbin-style aliases
             doc = {
                 "method": self.command,
+                "version": self.request_version,
                 "path": path,
                 "query": dict(query),
                 "headers": {k.lower(): v for k, v in self.headers.items()},
