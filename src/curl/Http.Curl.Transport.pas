@@ -81,8 +81,10 @@ begin
     Easy.SetStr(CURLOPT_ACCEPT_ENCODING, '');   // '' = every encoding libcurl supports
 
   case Options.HttpVersion of
+    hvHttp1:   Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
     hvHttp1_1: Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
     hvHttp2:   Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
+    hvHttp3:   Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_3);
   end;
 
   if Options.CookieFile <> '' then

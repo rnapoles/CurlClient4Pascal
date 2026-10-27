@@ -6,7 +6,7 @@ unit Http.Options;
 interface
 
 type
-  THttpVersion = (hvDefault, hvHttp1_1, hvHttp2);
+  THttpVersion = (hvDefault, hvHttp1, hvHttp1_1, hvHttp2, hvHttp3);
 
   THttpClientOptions = record
     BaseUrl: string;            // prepended to relative request URLs
