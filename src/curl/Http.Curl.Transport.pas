@@ -22,7 +22,9 @@ type
     procedure ConfigureConnection(Easy: TCurlEasy; const Request: IHttpRequest;
       const Options: THttpClientOptions);
     procedure ConfigureMethodAndBody(Easy: TCurlEasy; const Request: IHttpRequest;
-      Source: TCurlBodySource);
+      Source: TCurlBodySource; Mime: TCurlMime);
+    function CreateBodySource(const Request: IHttpRequest): TCurlBodySource;
+    function CreateMime(Easy: TCurlEasy; const Request: IHttpRequest): TCurlMime;
     procedure ConfigureHeaders(Easy: TCurlEasy; const Request: IHttpRequest;
       HeaderList: TCurlSlist);
     function BuildResponse(Easy: TCurlEasy; BodySink: TCurlBodySink;
@@ -81,10 +83,10 @@ begin
     Easy.SetStr(CURLOPT_ACCEPT_ENCODING, '');   // '' = every encoding libcurl supports
 
   case Options.HttpVersion of
-    hvHttp1:   Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
-    hvHttp1_1: Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-    hvHttp2:   Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
-    hvHttp3:   Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_3);
+     hvHttp1:   Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
+     hvHttp1_1: Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+     hvHttp2:   Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
+     hvHttp3:   Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_3);
   end;
 
   if Options.CookieFile <> '' then
@@ -97,14 +99,64 @@ begin
     Easy.SetBool(CURLOPT_VERBOSE, True);
 end;
 
+{ Raw body: an in-memory buffer, or a local file streamed from disk. }
+function TCurlHttpClient.CreateBodySource(const Request: IHttpRequest): TCurlBodySource;
+var
+  Stream: TFileStream;
+begin
+  if Length(Request.MultipartParts) > 0 then
+  begin
+    Result := nil;                       // multipart uses TCurlMime instead
+    Exit;
+  end;
+  if Request.BodyFilePath <> '' then
+  begin
+    try
+      Stream := TFileStream.Create(Request.BodyFilePath, fmOpenRead or fmShareDenyWrite);
+    except
+      on E: EStreamError do
+        raise EHttpError.CreateFmt('Cannot open upload file "%s": %s',
+          [Request.BodyFilePath, E.Message]);
+    end;
+    Result := TCurlBodySource.Create(Stream, True);   // source owns the stream
+  end
+  else
+    Result := TCurlBodySource.Create(Request.Body);
+end;
+
+function TCurlHttpClient.CreateMime(Easy: TCurlEasy;
+  const Request: IHttpRequest): TCurlMime;
+var
+  Parts: THttpMultipartParts;
+  I: Integer;
+begin
+  Parts := Request.MultipartParts;
+  Result := nil;
+  if Length(Parts) = 0 then Exit;
+  Result := TCurlMime.Create(Easy);
+  try
+    for I := 0 to High(Parts) do
+      case Parts[I].Kind of
+        mpField: Result.AddField(Parts[I].Name, Parts[I].Value);
+        mpFile:  Result.AddFile(Parts[I].Name, Parts[I].Value, Parts[I].FileName,
+                   Parts[I].ContentType);
+        mpBytes: Result.AddBytes(Parts[I].Name, Parts[I].FileName, Parts[I].Data,
+                   Parts[I].ContentType);
+      end;
+  except
+    Result.Free;
+    raise;
+  end;
+end;
+
 procedure TCurlHttpClient.ConfigureMethodAndBody(Easy: TCurlEasy;
-  const Request: IHttpRequest; Source: TCurlBodySource);
+  const Request: IHttpRequest; Source: TCurlBodySource; Mime: TCurlMime);
 var
   Method: THttpMethod;
   HasBody, SendsBody: Boolean;
 begin
   Method := Request.Method;
-  HasBody := Length(Request.Body) > 0;
+  HasBody := (Mime <> nil) or (Request.BodyFilePath <> '') or (Length(Request.Body) > 0);
 
   if (Method in [hmGet, hmHead]) and HasBody then
     raise EHttpError.CreateFmt('%s requests cannot have a body', [HttpMethodToString(Method)]);
@@ -114,19 +166,28 @@ begin
     hmHead: Easy.SetBool(CURLOPT_NOBODY, True);
   end;
 
-  // POST/PUT/PATCH always send a (possibly empty) body with Content-Length;
-  // DELETE/OPTIONS only when one was supplied.
-  SendsBody := (Method in [hmPost, hmPut, hmPatch]) or HasBody;
-  if SendsBody then
+  if Mime <> nil then
   begin
-    // POST + READFUNCTION + known size == streamed upload without copying
-    Easy.SetBool(CURLOPT_POST, True);
-    Easy.SetInt64(CURLOPT_POSTFIELDSIZE_LARGE, Length(Request.Body));
-    Easy.SetPtr(CURLOPT_READFUNCTION, Pointer(@CurlReadCallback));
-    Easy.SetPtr(CURLOPT_READDATA, Pointer(Source));
-    // needed to re-send the body after 307/308 redirects or auth retries
-    Easy.SetPtr(CURLOPT_SEEKFUNCTION, Pointer(@CurlSeekCallback));
-    Easy.SetPtr(CURLOPT_SEEKDATA, Pointer(Source));
+    // multipart/form-data: libcurl builds the boundary, Content-Type and
+    // Content-Length and streams every part.
+    Easy.SetPtr(CURLOPT_MIMEPOST, Mime.Handle);
+  end
+  else
+  begin
+    // POST/PUT/PATCH always send a (possibly empty) body with Content-Length;
+    // DELETE/OPTIONS only when one was supplied.
+    SendsBody := (Method in [hmPost, hmPut, hmPatch]) or HasBody;
+    if SendsBody then
+    begin
+      // POST + READFUNCTION + known size == streamed upload without copying
+      Easy.SetBool(CURLOPT_POST, True);
+      Easy.SetInt64(CURLOPT_POSTFIELDSIZE_LARGE, Source.Size);
+      Easy.SetPtr(CURLOPT_READFUNCTION, Pointer(@CurlReadCallback));
+      Easy.SetPtr(CURLOPT_READDATA, Pointer(Source));
+      // needed to re-send the body after 307/308 redirects or auth retries
+      Easy.SetPtr(CURLOPT_SEEKFUNCTION, Pointer(@CurlSeekCallback));
+      Easy.SetPtr(CURLOPT_SEEKDATA, Pointer(Source));
+    end;
   end;
 
   if Method in [hmPut, hmPatch, hmDelete, hmOptions] then
@@ -179,6 +240,7 @@ var
   BodySink: TCurlBodySink;
   HeaderSink: TCurlHeaderSink;
   Source: TCurlBodySource;
+  Mime: TCurlMime;
   Code: CURLcode;
 begin
   // Strict ownership chain: every native resource is released in `finally`,
@@ -191,10 +253,13 @@ begin
       try
         HeaderSink := TCurlHeaderSink.Create;
         try
-          Source := TCurlBodySource.Create(Request.Body);
+          Source := nil;
+          Mime := nil;
           try
+            Source := CreateBodySource(Request);         // raw body / file (or nil)
+            Mime := CreateMime(Easy, Request);           // multipart (or nil)
             ConfigureConnection(Easy, Request, Options);
-            ConfigureMethodAndBody(Easy, Request, Source);
+            ConfigureMethodAndBody(Easy, Request, Source, Mime);
             ConfigureHeaders(Easy, Request, HeaderList);
 
             Easy.SetPtr(CURLOPT_WRITEFUNCTION, Pointer(@CurlWriteCallback));
@@ -210,6 +275,7 @@ begin
             Result := BuildResponse(Easy, BodySink, HeaderSink,
               Request.ResponseStream <> nil);
           finally
+            Mime.Free;                                   // curl_mime_free + close files
             Source.Free;
           end;
         finally

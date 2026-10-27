@@ -20,6 +20,8 @@ uses
   SysUtils, Classes, libcurl, Http.Errors, Http.Utils, Http.Headers;
 
 type
+  TCurlEasy = class;
+
   { `long` in C is 32 bit on Windows and 64 bit on LP64 Unix. Variadic
     arguments are passed by slot size, so NativeInt is correct everywhere:
     it is 4 bytes on Win32 and 8 bytes on Win64/Linux (the callee reads the
@@ -66,15 +68,42 @@ type
     property Reason: string read FReason;
   end;
 
-  { Supplies the request body (CURLOPT_READDATA / SEEKDATA). }
+  { Supplies upload data (CURLOPT_READDATA / SEEKDATA, or a MIME part):
+    either an in-memory buffer or a TStream, read from its position at
+    creation time to its end. }
   TCurlBodySource = class
   private
     FData: TBytes;
-    FPos: NativeInt;
+    FStream: TStream;
+    FOwnsStream: Boolean;
+    FStart: Int64;
+    FSize: Int64;
+    FPos: Int64;
   public
-    constructor Create(const AData: TBytes);
+    constructor Create(const AData: TBytes); overload;
+    constructor Create(AStream: TStream; AOwnsStream: Boolean); overload;
+    destructor Destroy; override;
     function Read(Dest: Pointer; MaxLen: NativeUInt): NativeUInt;
     function Seek(Offset: Int64; Origin: Integer): Boolean;
+    property Size: Int64 read FSize;
+  end;
+
+  { Owns a  curl_mime *  (multipart/form-data) plus every file stream that
+    feeds its parts. Create AFTER the easy handle, free BEFORE it. }
+  TCurlMime = class
+  private
+    FMime: Pcurl_mime;
+    FSources: array of TCurlBodySource;
+    function NewPart(const Name: string): Pcurl_mimepart;
+    procedure SetPartStr(Part: Pcurl_mimepart; Kind: Integer; const Value: string);
+  public
+    constructor Create(Easy: TCurlEasy);
+    destructor Destroy; override;
+    procedure AddField(const Name, Value: string);
+    procedure AddFile(const Name, FilePath, FileName, ContentType: string);
+    procedure AddBytes(const Name, FileName: string; const Data: TBytes;
+      const ContentType: string);
+    property Handle: Pcurl_mime read FMime;
   end;
 
   { ---- 4. slist ---- }
@@ -123,6 +152,7 @@ function CurlSeekCallback(UserData: Pointer; Offset: curl_off_t;
 
 { ---- helpers ---- }
 procedure EnsureCurlInitialized;
+procedure CurlCheck(Code: CURLcode; const Operation: string);
 function CurlVersionString: string;
 function CStrToString(P: Pointer): string;
 
@@ -260,24 +290,46 @@ constructor TCurlBodySource.Create(const AData: TBytes);
 begin
   inherited Create;
   FData := AData;
+  FSize := Length(AData);
+end;
+
+constructor TCurlBodySource.Create(AStream: TStream; AOwnsStream: Boolean);
+begin
+  inherited Create;
+  FStream := AStream;
+  FOwnsStream := AOwnsStream;
+  FStart := AStream.Position;
+  FSize := AStream.Size - FStart;
+end;
+
+destructor TCurlBodySource.Destroy;
+begin
+  if FOwnsStream then FStream.Free;
+  inherited Destroy;
 end;
 
 function TCurlBodySource.Read(Dest: Pointer; MaxLen: NativeUInt): NativeUInt;
 var
-  Avail: NativeInt;
+  Avail: Int64;
+  Want: Integer;
 begin
-  Avail := Length(FData) - FPos;
+  Avail := FSize - FPos;
   if Avail <= 0 then
-    Result := 0
+  begin
+    Result := 0;
+    Exit;
+  end;
+  if Int64(MaxLen) < Avail then Avail := Int64(MaxLen);
+  if Avail > 1048576 then Avail := 1048576;      // cap a single chunk
+  Want := Integer(Avail);
+  if FStream <> nil then
+    Result := NativeUInt(FStream.Read(Dest^, Want))
   else
   begin
-    if NativeUInt(Avail) < MaxLen then
-      Result := NativeUInt(Avail)
-    else
-      Result := MaxLen;
-    Move(FData[FPos], Dest^, Result);
-    Inc(FPos, Result);
+    Move(FData[FPos], Dest^, Want);
+    Result := NativeUInt(Want);
   end;
+  Inc(FPos, Result);
 end;
 
 function TCurlBodySource.Seek(Offset: Int64; Origin: Integer): Boolean;
@@ -287,12 +339,16 @@ begin
   case Origin of
     0: NewPos := Offset;                          // SEEK_SET
     1: NewPos := FPos + Offset;                   // SEEK_CUR
-    2: NewPos := Length(FData) + Offset;          // SEEK_END
+    2: NewPos := FSize + Offset;                  // SEEK_END
   else
     NewPos := -1;
   end;
-  Result := (NewPos >= 0) and (NewPos <= Length(FData));
-  if Result then FPos := NativeInt(NewPos);
+  Result := (NewPos >= 0) and (NewPos <= FSize);
+  if Result then
+  begin
+    if FStream <> nil then FStream.Position := FStart + NewPos;
+    FPos := NewPos;
+  end;
 end;
 
 { ===== 3. C callbacks =====
@@ -355,6 +411,111 @@ begin
   except
     Result := CURL_SEEKFUNC_FAIL;
   end;
+end;
+
+{ ===== 4a. multipart (MIME) ===== }
+
+procedure CurlCheck(Code: CURLcode; const Operation: string);
+begin
+  if Code <> CURLE_OK then
+    raise ECurlError.Create(Ord(Code), Operation,
+      CStrToString(curl_easy_strerror(Code)));
+end;
+
+constructor TCurlMime.Create(Easy: TCurlEasy);
+begin
+  inherited Create;
+  FMime := curl_mime_init(Easy.Handle);
+  if FMime = nil then
+    raise ECurlError.Create(Ord(CURLE_OUT_OF_MEMORY), 'curl_mime_init', 'out of memory');
+end;
+
+destructor TCurlMime.Destroy;
+var
+  I: Integer;
+begin
+  if FMime <> nil then
+    curl_mime_free(FMime);               // stops all callbacks into the sources
+  for I := 0 to High(FSources) do
+    FSources[I].Free;                    // closes the file streams
+  inherited Destroy;
+end;
+
+function TCurlMime.NewPart(const Name: string): Pcurl_mimepart;
+var
+  U: UTF8String;
+begin
+  Result := curl_mime_addpart(FMime);
+  if Result = nil then
+    raise ECurlError.Create(Ord(CURLE_OUT_OF_MEMORY), 'curl_mime_addpart', 'out of memory');
+  U := UTF8Encode(Name);
+  CurlCheck(curl_mime_name(Result, PUTF8Char(PAnsiChar(U))), 'curl_mime_name');
+end;
+
+{ Kind: 0 = filename, 1 = mime type }
+procedure TCurlMime.SetPartStr(Part: Pcurl_mimepart; Kind: Integer; const Value: string);
+var
+  U: UTF8String;
+begin
+  U := UTF8Encode(Value);
+  if Kind = 0 then
+    CurlCheck(curl_mime_filename(Part, PUTF8Char(PAnsiChar(U))), 'curl_mime_filename')
+  else
+    CurlCheck(curl_mime_type(Part, PUTF8Char(PAnsiChar(U))), 'curl_mime_type');
+end;
+
+procedure TCurlMime.AddField(const Name, Value: string);
+var
+  Part: Pcurl_mimepart;
+  U: UTF8String;
+begin
+  Part := NewPart(Name);
+  U := UTF8Encode(Value);                // curl_mime_data copies the bytes
+  if Length(U) = 0 then
+    CurlCheck(curl_mime_data(Part, PUTF8Char(PAnsiChar('')), 0), 'curl_mime_data')
+  else
+    CurlCheck(curl_mime_data(Part, PUTF8Char(PAnsiChar(U)), Length(U)), 'curl_mime_data');
+end;
+
+procedure TCurlMime.AddBytes(const Name, FileName: string; const Data: TBytes;
+  const ContentType: string);
+var
+  Part: Pcurl_mimepart;
+  Dummy: Byte;
+begin
+  Part := NewPart(Name);
+  Dummy := 0;
+  if Length(Data) = 0 then
+    CurlCheck(curl_mime_data(Part, PUTF8Char(@Dummy), 0), 'curl_mime_data')
+  else
+    CurlCheck(curl_mime_data(Part, PUTF8Char(@Data[0]), Length(Data)), 'curl_mime_data');
+  if FileName <> '' then SetPartStr(Part, 0, FileName);
+  if ContentType <> '' then SetPartStr(Part, 1, ContentType);
+end;
+
+procedure TCurlMime.AddFile(const Name, FilePath, FileName, ContentType: string);
+var
+  Part: Pcurl_mimepart;
+  Stream: TFileStream;
+  Source: TCurlBodySource;
+begin
+  // The file is read through a Pascal stream (full Unicode path support on
+  // Windows) and fed to libcurl chunk by chunk: memory use stays constant.
+  try
+    Stream := TFileStream.Create(FilePath, fmOpenRead or fmShareDenyWrite);
+  except
+    on E: EStreamError do
+      raise EHttpError.CreateFmt('Cannot open upload file "%s": %s', [FilePath, E.Message]);
+  end;
+  Source := TCurlBodySource.Create(Stream, True);
+  SetLength(FSources, Length(FSources) + 1);
+  FSources[High(FSources)] := Source;      // owned from here on
+  Part := NewPart(Name);
+  CurlCheck(curl_mime_data_cb(Part, Source.Size,
+    curl_read_callback(@CurlReadCallback), curl_seek_callback(@CurlSeekCallback),
+    nil, Pointer(Source)), 'curl_mime_data_cb');
+  if FileName <> '' then SetPartStr(Part, 0, FileName);
+  if ContentType <> '' then SetPartStr(Part, 1, ContentType);
 end;
 
 { ===== 4. slist ===== }

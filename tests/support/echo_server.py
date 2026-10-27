@@ -14,9 +14,15 @@ Endpoints
   /gzip                  gzip encoded JSON
   /bytes/<n>             n bytes of 'x'
   /headers               response with a duplicate header (X-Multi: one / two)
+  /upload                multipart/form-data or raw body -> JSON summary:
+                         {content_type, size, fields{}, files[{field, filename,
+                          content_type, size, sum}]}  or  {raw{size, sum}}
+                         (sum = sum of all payload bytes mod 2**32)
   /__shutdown            stops the server
 """
 import gzip
+from email.parser import BytesParser
+from email.policy import HTTP as HTTP_POLICY
 import json
 import sys
 import threading
@@ -31,6 +37,29 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):  # keep test output quiet
         pass
+
+    def _upload_summary(self, body):
+        ctype = self.headers.get("Content-Type", "")
+        out = {"method": self.command, "content_type": ctype.split(";")[0].strip(), "size": len(body)}
+        if ctype.lower().startswith("multipart/form-data"):
+            msg = BytesParser(policy=HTTP_POLICY).parsebytes(
+                b"Content-Type: " + ctype.encode("latin-1") + b"\r\n\r\n" + body)
+            fields, files = {}, []
+            for part in msg.iter_parts():
+                name = part.get_param("name", header="content-disposition")
+                filename = part.get_filename()
+                payload = part.get_payload(decode=True) or b""
+                if filename is None:
+                    fields[name] = payload.decode("utf-8", "replace")
+                else:
+                    files.append({"field": name, "filename": filename,
+                                  "content_type": part.get_content_type(),
+                                  "size": len(payload), "sum": sum(payload) & 0xFFFFFFFF})
+            out["fields"] = fields
+            out["files"] = files
+        else:
+            out["raw"] = {"size": len(body), "sum": sum(body) & 0xFFFFFFFF}
+        return out
 
     # -- helpers ---------------------------------------------------------
     def _body(self):
@@ -66,6 +95,8 @@ class Handler(BaseHTTPRequestHandler):
                 "body": body.decode("utf-8", "replace"),
             }
             self._send(200, json.dumps(doc, ensure_ascii=False), extra=[("X-Echo", "yes")])
+        elif path == "/upload":
+            self._send(200, json.dumps(self._upload_summary(body), ensure_ascii=False))
         elif path.startswith("/status/"):
             code = int(path.rsplit("/", 1)[1])
             self._send(code, "status %d" % code, "text/plain")

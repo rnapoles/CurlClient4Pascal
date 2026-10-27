@@ -15,7 +15,7 @@ if "%WHICH%"=="" set "WHICH=all"
 set "PLAT=%~2"
 if "%PLAT%"=="" set "PLAT=win64"
 
-set "PROGRAMS=examples\Example.Get.dpr examples\Example.Post.dpr examples\Example.Builder.dpr tests\RunUnitTests.dpr tests\RunIntegrationTests.dpr"
+set "PROGRAMS=examples\Example.Get.dpr examples\Example.Post.dpr examples\Example.Builder.dpr examples\Example.Upload.dpr tests\RunUnitTests.dpr tests\RunIntegrationTests.dpr"
 set "BUILT=0"
 set "FAILED=0"
 

@@ -33,6 +33,7 @@ if command -v python3 >/dev/null 2>&1; then
   for ex in Example.Get Example.Post Example.Builder; do
     "$BIN/$ex" "$BASE" >/dev/null 2>&1 && echo "[PASS] $ex" || { echo "[FAIL] $ex"; FAILED=1; }
   done
+  "$BIN/Example.Upload" "$BASE" /upload >/dev/null 2>&1 && echo "[PASS] Example.Upload" || { echo "[FAIL] Example.Upload"; FAILED=1; }
 else
   echo "python3 not found: integration tests will be skipped (network-free ones still run)"
   "$BIN/RunIntegrationTests" || FAILED=1

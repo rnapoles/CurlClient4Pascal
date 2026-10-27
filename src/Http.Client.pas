@@ -71,6 +71,11 @@ type
     function PostJson(const Url, JsonText: string): IHttpResponse;
     { NameValuePairs = ['name1', 'value1', 'name2', 'value2', ...] }
     function PostForm(const Url: string; const NameValuePairs: array of string): IHttpResponse;
+    { multipart/form-data POST with a single file part (streamed from disk). }
+    function UploadFile(const Url, FieldName, FilePath: string): IHttpResponse;
+    { PUT with the raw content of a file as body (streamed from disk).
+      ContentType '' = guessed from the file extension. }
+    function PutFile(const Url, FilePath: string; const ContentType: string = ''): IHttpResponse;
 
     property Headers: THttpHeaders read GetHeaders;
     property Cookies: THttpCookieJar read GetCookies;
@@ -132,6 +137,8 @@ type
       const ContentType: string = DEFAULT_BINARY_CONTENT_TYPE): IHttpResponse;
     function PostJson(const Url, JsonText: string): IHttpResponse;
     function PostForm(const Url: string; const NameValuePairs: array of string): IHttpResponse;
+    function UploadFile(const Url, FieldName, FilePath: string): IHttpResponse;
+    function PutFile(const Url, FilePath: string; const ContentType: string = ''): IHttpResponse;
   end;
 
   { ---- Builder ---- }
@@ -483,6 +490,16 @@ begin
     Inc(I, 2);
   end;
   Result := Execute(Req);
+end;
+
+function THttpClient.UploadFile(const Url, FieldName, FilePath: string): IHttpResponse;
+begin
+  Result := Execute(NewRequest(hmPost, Url).AddMultipartFile(FieldName, FilePath));
+end;
+
+function THttpClient.PutFile(const Url, FilePath, ContentType: string): IHttpResponse;
+begin
+  Result := Execute(NewRequest(hmPut, Url).SetBodyFile(FilePath, ContentType));
 end;
 
 { THttpClientBuilder }

@@ -41,7 +41,7 @@ src/
   curl/
     Http.Curl.Native.pas      LOW LEVEL : cdecl callbacks, CURL*/slist owners
     Http.Curl.Transport.pas   HIGH LEVEL: TCurlHttpClient (IHttpTransport)
-examples/                     Example.Get / Example.Post / Example.Builder
+examples/                     Example.Get / .Post / .Builder / .Upload
 tests/
   RunUnitTests.dpr            no network, no libcurl needed
   RunIntegrationTests.dpr     libcurl + local echo server

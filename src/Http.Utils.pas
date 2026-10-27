@@ -43,6 +43,8 @@ function TryParseStatusLine(const Line: string; out HttpVersion: string;
   out Code: Integer; out Reason: string): Boolean;
 function TryParseHttpDate(const S: string; out UtcValue: TDateTime): Boolean;
 function NowUtc: TDateTime;
+{ MIME type from a file name's extension; 'application/octet-stream' if unknown. }
+function GuessContentType(const FileName: string): string;
 function ParseIntDef(const S: string; DefaultValue: Integer): Integer;
 
 implementation
@@ -470,6 +472,37 @@ begin
     on EConvertError do
       Result := False;
   end;
+end;
+
+function GuessContentType(const FileName: string): string;
+const
+  Known: array[0..27, 0..1] of string = (
+    ('txt', 'text/plain'), ('csv', 'text/csv'), ('html', 'text/html'),
+    ('htm', 'text/html'), ('css', 'text/css'), ('js', 'text/javascript'),
+    ('json', 'application/json'), ('xml', 'application/xml'),
+    ('pdf', 'application/pdf'), ('zip', 'application/zip'),
+    ('gz', 'application/gzip'), ('tar', 'application/x-tar'),
+    ('png', 'image/png'), ('jpg', 'image/jpeg'), ('jpeg', 'image/jpeg'),
+    ('gif', 'image/gif'), ('bmp', 'image/bmp'), ('webp', 'image/webp'),
+    ('svg', 'image/svg+xml'), ('ico', 'image/x-icon'),
+    ('mp3', 'audio/mpeg'), ('wav', 'audio/wav'), ('mp4', 'video/mp4'),
+    ('doc', 'application/msword'),
+    ('docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+    ('xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+    ('md', 'text/markdown'), ('log', 'text/plain'));
+var
+  Ext: string;
+  I: Integer;
+begin
+  Ext := AsciiLower(ExtractFileExt(FileName));
+  if (Ext <> '') and (Ext[1] = '.') then Delete(Ext, 1, 1);
+  for I := Low(Known) to High(Known) do
+    if Known[I, 0] = Ext then
+    begin
+      Result := Known[I, 1];
+      Exit;
+    end;
+  Result := 'application/octet-stream';
 end;
 
 function NowUtc: TDateTime;
