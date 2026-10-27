@@ -114,7 +114,7 @@ copy z.dll my-project
 * The Pascal cookie jar keeps cookies from the *final* response. For redirect chains,
   persistence and full RFC semantics use `SetCookieFile(path)` (libcurl's engine).
 * Configure a client before sharing it between threads; `Execute` itself is thread-safe.
-* Not included: multipart/form-data, async/multi interface, progress/cancel callbacks.
-* Validation status: the full suite (71 unit + 41 integration tests, 3 examples) was
+* Not included: async/multi interface, upload/download progress and cancel callbacks, uploading from an arbitrary `TStream`.
+* Validation status: the full suite (85 unit + 58 integration tests, 4 examples) was
   executed with **FPC 3.2.2 on Linux/Windows x86-64**. The Delphi code path and `.bat` scripts
   were written to the same dialect rules but **not compiled or run** in this environment.
