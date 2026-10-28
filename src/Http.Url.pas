@@ -71,7 +71,12 @@ type
     function GetAll(const Name: string): THttpStringArray;
     function Contains(const Name: string): Boolean;
     { Percent-encoded "a=1&b=x%20y" (no leading '?'). }
-    function ToString: string; reintroduce;
+    {$IFDEF FPC}
+    function ToString:{$IFDEF FPC_HAS_FEATURE_ANSISTRINGS}ansistring{$ELSE}shortstring{$ENDIF}; override;
+    {$ELSE}
+    function ToString: string; override;
+    {$ENDIF}
+    
     function GetEnumerator: TUrlQueryEnumerator;
     property Count: Integer read FCount;
     property Names[Index: Integer]: string read GetName;
@@ -152,7 +157,11 @@ type
     function Authority: string;
     function IsAbsolute: Boolean;
     function Build: string;
-    function ToString: string; reintroduce;
+    {$IFDEF FPC}
+    function ToString:{$IFDEF FPC_HAS_FEATURE_ANSISTRINGS}ansistring{$ELSE}shortstring{$ENDIF}; override;
+    {$ELSE}
+    function ToString: string; override;
+    {$ENDIF}
   end;
 
 { parse_url() equivalent. Raises EHttpError for malformed input
@@ -328,7 +337,11 @@ begin
   Result := IndexOfName(Name) >= 0;
 end;
 
+{$IFDEF FPC}
+function TUrlQuery.ToString:{$IFDEF FPC_HAS_FEATURE_ANSISTRINGS}ansistring{$ELSE}shortstring{$ENDIF}; 
+{$ELSE}
 function TUrlQuery.ToString: string;
+{$ENDIF}
 var
   I: Integer;
 begin
@@ -670,7 +683,11 @@ begin
   if FFragment <> '' then Result := Result + '#' + FFragment;
 end;
 
+{$IFDEF FPC}
+function TUrl.ToString:{$IFDEF FPC_HAS_FEATURE_ANSISTRINGS}ansistring{$ELSE}shortstring{$ENDIF}; 
+{$ELSE}
 function TUrl.ToString: string;
+{$ENDIF}
 begin
   Result := Build;
 end;
