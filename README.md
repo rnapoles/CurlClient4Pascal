@@ -30,6 +30,7 @@ vendor/libcurl.pas            your Chet-generated binding (unchanged)
 src/
   Http.Defines.inc            {$IFDEF FPC}{$MODE DELPHI}{$ENDIF} + string settings
   Http.Utils.pas              URL/Base64/date helpers            (pure Pascal)
+  Http.Url.pas                ParseUrl -> IUrl (parts + iterable query)
   Http.Errors.pas             EHttpError, ECurlError, EHttpStatusError, ...
   Http.Headers.pas            THttpHeaders (case-insensitive, multi-value)
   Http.Cookies.pas            THttpCookieJar (RFC 6265 subset, thread-safe)
@@ -115,6 +116,6 @@ copy z.dll my-project
   persistence and full RFC semantics use `SetCookieFile(path)` (libcurl's engine).
 * Configure a client before sharing it between threads; `Execute` itself is thread-safe.
 * Not included: async/multi interface, upload/download progress and cancel callbacks.
-* Validation status: the full suite (93 unit + 72 integration tests, 4 examples) was
+* Validation status: the full suite (121 unit + 72 integration tests, 4 examples) was
   executed with **FPC 3.2.2 on Linux/Windows x86-64**. The Delphi code path and `.bat` scripts
   were written to the same dialect rules but **not compiled or run** in this environment.

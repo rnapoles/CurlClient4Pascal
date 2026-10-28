@@ -8,6 +8,8 @@ uses
   Test.Utils.CombineUrl, Test.Utils.HttpParsing,
   Test.Headers.CaseInsensitive, Test.Headers.MultiValue,
   Test.Headers.Validation, Test.Headers.MergeAssign,
+  Test.Url.Parsing, Test.Url.Invalid, Test.Url.QueryParsing, Test.Url.QueryIteration,
+  Test.Url.QueryEditing, Test.Url.Build,
   Test.Errors.CurlError,
   Test.Cookies.Jar, Test.Cookies.HeaderBuilding, Test.Cookies.SetCookieParsing,
   Test.Utils.ContentTypeGuess,
