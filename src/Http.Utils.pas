@@ -38,6 +38,10 @@ function TryParseUrl(const Url: string; out Parts: TUrlParts): Boolean;
 function CombineUrl(const BaseUrl, Relative: string): string;
 function AppendQueryParam(const Url, Name, Value: string): string;
 
+{ Directory for temporary files, always WITH a trailing path delimiter.
+  Portable replacement for FPC's GetTempDir (which Delphi lacks). }
+function GetTempDirectory: string;
+
 { HTTP parsing }
 function TryParseStatusLine(const Line: string; out HttpVersion: string;
   out Code: Integer; out Reason: string): Boolean;
@@ -50,7 +54,7 @@ function ParseIntDef(const S: string; DefaultValue: Integer): Integer;
 implementation
 
 uses
-  {$IFDEF FPC}DateUtils{$ELSE}System.DateUtils{$ENDIF};
+  {$IFDEF FPC}DateUtils{$ELSE}System.DateUtils, System.IOUtils{$ENDIF};
 
 const
   HexChars = '0123456789ABCDEF';
@@ -503,6 +507,18 @@ begin
       Exit;
     end;
   Result := 'application/octet-stream';
+end;
+
+function GetTempDirectory: string;
+begin
+  {$IFDEF FPC}
+  Result := GetTempDir;                 // SysUtils (FPC)
+  {$ELSE}
+  Result := TPath.GetTempPath;          // System.IOUtils (Delphi)
+  {$ENDIF}
+  if Result = '' then
+    Result := GetCurrentDir;
+  Result := IncludeTrailingPathDelimiter(Result);
 end;
 
 function NowUtc: TDateTime;

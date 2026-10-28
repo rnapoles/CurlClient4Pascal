@@ -6,7 +6,7 @@ unit Test.Files;
 interface
 
 uses
-  SysUtils, Classes;
+  SysUtils, Classes, Http.Utils;
 
 { Creates <temp>/<Name> with Size bytes of pattern data; returns its path. }
 function MakeTempFile(const Name: string; Size: Integer): string;
@@ -30,7 +30,7 @@ var
   Buf: array[0..65535] of Byte;
   Done, N, I: Integer;
 begin
-  Result := IncludeTrailingPathDelimiter(GetTempDir) + Name;
+  Result := GetTempDirectory + Name;
   F := TFileStream.Create(Result, fmCreate);
   try
     Done := 0;

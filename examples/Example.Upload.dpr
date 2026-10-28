@@ -14,7 +14,7 @@ program Example_Upload;
 {$APPTYPE CONSOLE}
 uses
   SysUtils, Classes,
-  Http.Errors, Http.Request, Http.Response, Http.Client,
+  Http.Errors, Http.Utils, Http.Request, Http.Response, Http.Client,
   Http.Curl.Transport;
 
 { Creates a small demo file so the sample is self-contained. }
@@ -22,7 +22,7 @@ function CreateDemoFile(const Name, Content: string): string;
 var
   L: TStringList;
 begin
-  Result := IncludeTrailingPathDelimiter(GetTempDir) + Name;
+  Result := GetTempDirectory + Name;
   L := TStringList.Create;
   try
     L.Text := Content;

@@ -2,12 +2,12 @@ unit Test.Services.CustomFile;
 {$I Http.Defines.inc}
 interface
 implementation
-uses SysUtils, Classes, Test.Framework, Http.Services, Http.Errors, Http.Url, Test.Files;
+uses SysUtils, Classes, Test.Framework, Http.Services, Http.Errors, Http.Url, Http.Utils, Test.Files;
 
 function WriteServicesFile(const Name, Text: string): string;
 var L: TStringList;
 begin
-  Result := IncludeTrailingPathDelimiter(GetTempDir) + Name;
+  Result := GetTempDirectory + Name;
   L := TStringList.Create;
   try L.Text := Text; L.SaveToFile(Result); finally L.Free; end;
 end;
@@ -26,7 +26,7 @@ procedure LoadMissing; begin NewServiceDatabase.LoadFromFile(GPath); end;
 procedure LoadMissingGlobal; begin LoadServicesFile(GPath); end;
 procedure TestMissingFileRaises;
 begin
-  GPath := IncludeTrailingPathDelimiter(GetTempDir) + 'no_such_services_file';
+  GPath := GetTempDirectory + 'no_such_services_file';
   CheckRaises(EHttpError, LoadMissing);
   CheckRaises(EHttpError, LoadMissingGlobal);
 end;
@@ -47,7 +47,7 @@ begin
   F := WriteServicesFile('svc_custom3.txt', 'keepme 5555/tcp'#10);
   try
     LoadServicesFile(F);
-    GPath := IncludeTrailingPathDelimiter(GetTempDir) + 'no_such_services_file';
+    GPath := GetTempDirectory + 'no_such_services_file';
     try LoadServicesFile(GPath); except on EHttpError do ; end;
     CheckEqualsInt(5555, ResolveServicePort('keepme'));
   finally SetDefaultServices(nil); DeleteTempFile(F); end;
