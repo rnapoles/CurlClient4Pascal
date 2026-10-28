@@ -31,5 +31,6 @@ for prog in examples/Example.Get.dpr examples/Example.Post.dpr examples/Example.
   [ -x "$OUT/bin/$name" ] || { echo "BUILD FAILED: $prog" >&2; exit 1; }
 done
 
+cp "$ROOT/data/services" "$OUT/bin/services"   # bundled /etc/services copy (see Http.Services)
 echo "OK -> $OUT/bin"
 echo "Note: libcurl must be loadable as 'libcurl.so' (Debian/Ubuntu: apt install libcurl4-openssl-dev)."
