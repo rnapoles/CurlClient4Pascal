@@ -131,6 +131,9 @@ type
     destructor Destroy; override;
     { setopt wrappers - each one checks the CURLcode and raises ECurlError }
     procedure SetLong(Option: CURLoption; Value: TCurlLong);
+    { Like SetLong but returns the raw CURLcode instead of raising, for options
+      whose support depends on how libcurl was built. }
+    function TrySetLong(Option: CURLoption; Value: TCurlLong): CURLcode;
     procedure SetBool(Option: CURLoption; Value: Boolean);
     procedure SetInt64(Option: CURLoption; Value: Int64);
     procedure SetStr(Option: CURLoption; const Value: string);
@@ -603,6 +606,11 @@ end;
 procedure TCurlEasy.SetLong(Option: CURLoption; Value: TCurlLong);
 begin
   CheckResult(curl_easy_setopt(FHandle, Option, Value), 'curl_easy_setopt');
+end;
+
+function TCurlEasy.TrySetLong(Option: CURLoption; Value: TCurlLong): CURLcode;
+begin
+  Result := curl_easy_setopt(FHandle, Option, Value);
 end;
 
 procedure TCurlEasy.SetBool(Option: CURLoption; Value: Boolean);

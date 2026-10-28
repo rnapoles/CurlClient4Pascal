@@ -23,6 +23,7 @@ type
       const Options: THttpClientOptions);
     procedure ConfigureMethodAndBody(Easy: TCurlEasy; const Request: IHttpRequest;
       Source: TCurlBodySource; Mime: TCurlMime);
+    procedure ApplyHttpVersion(Easy: TCurlEasy; Version: THttpVersion);
     function CreateBodySource(const Request: IHttpRequest): TCurlBodySource;
     function CreateMime(Easy: TCurlEasy; const Request: IHttpRequest): TCurlMime;
     procedure ConfigureHeaders(Easy: TCurlEasy; const Request: IHttpRequest;
@@ -44,6 +45,32 @@ begin
 end;
 
 { ---- configuration helpers ---- }
+
+{ 1.0 and 1.1 are always available. HTTP/2 and HTTP/3 depend on how libcurl was
+  built (nghttp2, QUIC); a build without them answers CURLE_UNSUPPORTED_PROTOCOL.
+  They are *preferences*, so in that case we silently keep libcurl's default
+  (HTTP/1.1) instead of failing the request. Any other error is still raised. }
+procedure TCurlHttpClient.ApplyHttpVersion(Easy: TCurlEasy; Version: THttpVersion);
+var
+  Code: CURLcode;
+begin
+  case Version of
+    hvHttp1:   Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
+    hvHttp1_1: Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+    hvHttp2, hvHttp3:
+      begin
+        if Version = hvHttp2 then
+          Code := Easy.TrySetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS)
+        else
+          Code := Easy.TrySetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_3);
+        if (Code <> CURLE_OK) and (Code <> CURLE_UNSUPPORTED_PROTOCOL) then
+          Easy.CheckResult(Code, 'curl_easy_setopt');
+      end;
+  else
+    // hvDefault: leave libcurl's own choice untouched
+  end;
+end;
+
 
 procedure TCurlHttpClient.ConfigureConnection(Easy: TCurlEasy;
   const Request: IHttpRequest; const Options: THttpClientOptions);
@@ -82,14 +109,7 @@ begin
   if Options.AutoDecompress then
     Easy.SetStr(CURLOPT_ACCEPT_ENCODING, '');   // '' = every encoding libcurl supports
 
-  case Options.HttpVersion of
-    hvHttp1:   Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
-    hvHttp1_1: Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-    hvHttp2:   Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
-    hvHttp3:   Easy.SetLong(CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_3);  // libcurl falls back
-  else
-    // hvDefault: leave libcurl's own choice untouched
-  end;
+  ApplyHttpVersion(Easy, Options.HttpVersion);
 
   if Options.CookieFile <> '' then
   begin

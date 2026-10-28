@@ -10,9 +10,11 @@ type
       hvDefault  libcurl decides (HTTP/2 over TLS when available)
       hvHttp1    force HTTP/1.0
       hvHttp1_1  force HTTP/1.1
-      hvHttp2    HTTP/2 for https, falls back to HTTP/1.1 (and plain http uses 1.1)
-      hvHttp3    try HTTP/3 (QUIC), falls back to older versions; raises ECurlError
-                 if the libcurl build has no HTTP/3 support }
+      hvHttp2    prefer HTTP/2 for https; plain http uses 1.1
+      hvHttp3    prefer HTTP/3 (QUIC), falling back to older versions
+    hvHttp2/hvHttp3 are preferences: if your libcurl build lacks that protocol
+    (no nghttp2 / no QUIC) the request silently uses HTTP/1.1 instead of failing.
+    Use hvHttp1 / hvHttp1_1 to force a version. }
   THttpVersion = (hvDefault, hvHttp1, hvHttp1_1, hvHttp2, hvHttp3);
 
   THttpClientOptions = record
