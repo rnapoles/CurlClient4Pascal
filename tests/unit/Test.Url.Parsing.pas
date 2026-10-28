@@ -27,7 +27,7 @@ begin
   CheckEqualsInt(80, U.EffectivePort);
   CheckEqualsStr('', U.Path);
   CheckEqualsInt(443, ParseUrl('https://h/').EffectivePort);
-  CheckEqualsInt(0, ParseUrl('gopher://h/').EffectivePort);
+  CheckEqualsInt(0, ParseUrl('nosuchscheme://h/').EffectivePort);
 end;
 procedure TestUserWithoutPassword;
 var U: IUrl;

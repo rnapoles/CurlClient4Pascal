@@ -80,6 +80,8 @@ set "BUILT=1"
 exit /b 0
 
 :copy_dll
+rem bundled /etc/services copy, found next to the executables (see Http.Services)
+copy /Y "%ROOT%data\services" %1 >nul
 if defined CURL_DLL_DIR (
   if exist "%CURL_DLL_DIR%\libcurl.dll" copy /Y "%CURL_DLL_DIR%\*.dll" %1 >nul
 )

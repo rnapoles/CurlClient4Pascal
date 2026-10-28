@@ -71,12 +71,13 @@ type
     function GetAll(const Name: string): THttpStringArray;
     function Contains(const Name: string): Boolean;
     { Percent-encoded "a=1&b=x%20y" (no leading '?'). }
+    { Percent-encoded "a=1&b=x%20y" (no leading '?'); same text as ToString. }
+    function Build: string;
     {$IFDEF FPC}
     function ToString:{$IFDEF FPC_HAS_FEATURE_ANSISTRINGS}ansistring{$ELSE}shortstring{$ENDIF}; override;
-    {$ELSE}
+{$ELSE}
     function ToString: string; override;
     {$ENDIF}
-    
     function GetEnumerator: TUrlQueryEnumerator;
     property Count: Integer read FCount;
     property Names[Index: Integer]: string read GetName;
@@ -103,7 +104,8 @@ type
     procedure SetPath(const Value: string);
     procedure SetFragment(const Value: string);
 
-    { Explicit port, or the scheme's default (http 80, https 443, ...), or 0. }
+    { Explicit port, else the port of the scheme looked up in the services
+      database (see Http.Services; /etc/services format), else 0. }
     function EffectivePort: Integer;
     { [user[:password]@]host[:port] ('' when there is no authority). }
     function Authority: string;
@@ -171,6 +173,9 @@ function ParseUrl(const Url: string): IUrl;
 function TryParseUrlObject(const Url: string; out Parsed: IUrl): Boolean;
 
 implementation
+
+uses
+  Http.Services;
 
 function ParseUrl(const Url: string): IUrl;
 begin
@@ -337,11 +342,7 @@ begin
   Result := IndexOfName(Name) >= 0;
 end;
 
-{$IFDEF FPC}
-function TUrlQuery.ToString:{$IFDEF FPC_HAS_FEATURE_ANSISTRINGS}ansistring{$ELSE}shortstring{$ENDIF}; 
-{$ELSE}
-function TUrlQuery.ToString: string;
-{$ENDIF}
+function TUrlQuery.Build: string;
 var
   I: Integer;
 begin
@@ -351,6 +352,15 @@ begin
     if I > 0 then Result := Result + '&';
     Result := Result + UrlEncode(FItems[I].Name) + '=' + UrlEncode(FItems[I].Value);
   end;
+end;
+
+{$IFDEF FPC}
+function TUrlQuery.ToString:{$IFDEF FPC_HAS_FEATURE_ANSISTRINGS}ansistring{$ELSE}shortstring{$ENDIF};
+{$ELSE}
+function TUrlQuery.ToString: string;
+{$ENDIF}
+begin
+  Result := Build;
 end;
 
 function TUrlQuery.GetEnumerator: TUrlQueryEnumerator;
@@ -632,14 +642,9 @@ function TUrl.EffectivePort: Integer;
 begin
   if FPort > 0 then
     Result := FPort
-  else if (FScheme = 'http') or (FScheme = 'ws') then
-    Result := 80
-  else if (FScheme = 'https') or (FScheme = 'wss') then
-    Result := 443
-  else if FScheme = 'ftp' then
-    Result := 21
   else
-    Result := 0;
+    // scheme -> port through the services database (/etc/services format)
+    Result := ResolveServicePort(FScheme);
 end;
 
 function TUrl.Authority: string;
@@ -679,12 +684,12 @@ begin
   else
     Path_ := FPath;
   Result := Result + Path_;
-  if FQuery.Count > 0 then Result := Result + '?' + FQuery.ToString;
+  if FQuery.Count > 0 then Result := Result + '?' + FQuery.Build;
   if FFragment <> '' then Result := Result + '#' + FFragment;
 end;
 
 {$IFDEF FPC}
-function TUrl.ToString:{$IFDEF FPC_HAS_FEATURE_ANSISTRINGS}ansistring{$ELSE}shortstring{$ENDIF}; 
+function TUrl.ToString:{$IFDEF FPC_HAS_FEATURE_ANSISTRINGS}ansistring{$ELSE}shortstring{$ENDIF};
 {$ELSE}
 function TUrl.ToString: string;
 {$ENDIF}
