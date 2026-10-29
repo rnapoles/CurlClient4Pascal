@@ -14,7 +14,7 @@ uses
   Test.Services.BundledCopy,
   Test.Errors.CurlError,
   Test.Cookies.Jar, Test.Cookies.HeaderBuilding, Test.Cookies.SetCookieParsing,
-  Test.Utils.ContentTypeGuess,
+  Test.Utils.ContentTypeGuess, Test.Utils.TempDirectory,
   Test.Request.Fluent, Test.Request.Multipart, Test.Request.BodyFile,
   Test.Client.UploadHelpers, Test.Request.BodyStream, Test.Client.StreamHelpers,
   Test.Response.StatusHelpers, Test.Response.TextDecoding,
