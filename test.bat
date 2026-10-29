@@ -58,6 +58,7 @@ pushd "%ROOT%build\run"
 for %%E in (Example.Get Example.Post Example.Builder) do (
   "%BIN%\%%E.exe" %BASE% >nul 2>&1 && (echo [PASS] %%E) || (echo [FAIL] %%E & set "FAILED=1")
 )
+"%BIN%\Example.Interceptors.exe" %BASE% >nul 2>&1 && (echo [PASS] Example.Interceptors) || (echo [FAIL] Example.Interceptors & set "FAILED=1")
 "%BIN%\Example.Upload.exe" %BASE% /upload >nul 2>&1 && (echo [PASS] Example.Upload) || (echo [FAIL] Example.Upload & set "FAILED=1")
 popd
 

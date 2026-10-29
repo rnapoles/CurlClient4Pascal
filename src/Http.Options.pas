@@ -5,6 +5,9 @@ unit Http.Options;
 
 interface
 
+uses
+  Http.Logging;
+
 type
   { Preferred HTTP protocol version.
       hvDefault  libcurl decides (HTTP/2 over TLS when available)
@@ -31,7 +34,9 @@ type
     HttpVersion: THttpVersion;
     CookieFile: string;         // non-empty enables libcurl's cookie engine + persistence
     MaxResponseBytes: Int64;    // 0 = unlimited; protects against memory exhaustion
-    Verbose: Boolean;           // libcurl wire trace on stderr
+    Verbose: Boolean;           // libcurl wire trace (see Logger)
+    Logger: IHttpLogger;        // receives the verbose trace; nil = libcurl prints to stderr
+    RedactLogs: Boolean;        // mask Authorization/Cookie/... values in the trace
   end;
 
 function DefaultHttpClientOptions: THttpClientOptions;
@@ -54,6 +59,8 @@ begin
   Result.CookieFile := '';
   Result.MaxResponseBytes := 0;
   Result.Verbose := False;
+  Result.Logger := nil;
+  Result.RedactLogs := True;
 end;
 
 end.

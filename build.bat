@@ -2,7 +2,7 @@
 rem ---------------------------------------------------------------------------
 rem  Builds the examples and test runners.
 rem    build.bat [fpc|delphi|all] [win32|win64]        (defaults: all, win64)
-rem  Delphi : needs RAD Studio 12+ (uses %BDS%, or the default 23.0 install dir)
+rem  Delphi : needs RAD Studio 12+ (uses %BDS%, or the default 37.0 install dir)
 rem  FPC    : needs fpc.exe on PATH (3.2.2+)
 rem  Output : build\fpc-<platform>\bin   and   build\delphi-<platform>\bin
 rem  Put libcurl.dll (+ its dependencies) of the SAME bitness next to the .exe
@@ -15,7 +15,7 @@ if "%WHICH%"=="" set "WHICH=all"
 set "PLAT=%~2"
 if "%PLAT%"=="" set "PLAT=win64"
 
-set "PROGRAMS=examples\Example.Get.dpr examples\Example.Post.dpr examples\Example.Builder.dpr examples\Example.Upload.dpr tests\RunUnitTests.dpr tests\RunIntegrationTests.dpr"
+set "PROGRAMS=examples\Example.Get.dpr examples\Example.Post.dpr examples\Example.Builder.dpr examples\Example.Upload.dpr examples\Example.Interceptors.dpr tests\RunUnitTests.dpr tests\RunIntegrationTests.dpr"
 set "BUILT=0"
 set "FAILED=0"
 
@@ -56,7 +56,7 @@ exit /b 0
 :build_delphi
 set "RSVARS="
 if defined BDS if exist "%BDS%\bin\rsvars.bat" set "RSVARS=%BDS%\bin\rsvars.bat"
-if not defined RSVARS if exist "%ProgramFiles(x86)%\Embarcadero\Studio\23.0\bin\rsvars.bat" set "RSVARS=%ProgramFiles(x86)%\Embarcadero\Studio\23.0\bin\rsvars.bat"
+if not defined RSVARS if exist "%ProgramFiles(x86)%\Embarcadero\Studio\37.0\bin\rsvars.bat" set "RSVARS=%ProgramFiles(x86)%\Embarcadero\Studio\37.0\bin\rsvars.bat"
 if not defined RSVARS (
   if /I "%WHICH%"=="delphi" ( echo error: RAD Studio not found ^(set BDS^) & exit /b 1 )
   echo [skip] Delphi not found

@@ -16,12 +16,16 @@ type
     FCallCount: Integer;
     FStatusCode: Integer;
     FBodyText: string;
+    FFailClass: ExceptClass;
+    FFailMessage: string;
     FResponseHeaders: array of array[0..1] of string;
   public
     constructor Create;
     { Canned answer }
     procedure RespondWith(AStatusCode: Integer; const ABodyText: string = '');
     procedure AddResponseHeader(const Name, Value: string);
+    { Make Execute raise AClass.Create(Msg) (after recording the request). }
+    procedure FailWith(AClass: ExceptClass; const Msg: string);
     function Execute(const Request: IHttpRequest;
       const Options: THttpClientOptions): IHttpResponse;
     property LastRequest: IHttpRequest read FLastRequest;
@@ -53,6 +57,12 @@ begin
   FBodyText := ABodyText;
 end;
 
+procedure TFakeTransport.FailWith(AClass: ExceptClass; const Msg: string);
+begin
+  FFailClass := AClass;
+  FFailMessage := Msg;
+end;
+
 procedure TFakeTransport.AddResponseHeader(const Name, Value: string);
 begin
   SetLength(FResponseHeaders, Length(FResponseHeaders) + 1);
@@ -69,6 +79,8 @@ begin
   Inc(FCallCount);
   FLastRequest := Request;
   FLastOptions := Options;
+  if FFailClass <> nil then
+    raise FFailClass.Create(FFailMessage);
   R := THttpResponse.Create;
   Result := R;
   R.StatusCode := FStatusCode;

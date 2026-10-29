@@ -27,10 +27,14 @@ end;
 
 ```
 vendor/libcurl.pas            your Chet-generated binding (unchanged)
+data/services                 bundled copy of /etc/services (IANA list)
 src/
   Http.Defines.inc            {$IFDEF FPC}{$MODE DELPHI}{$ENDIF} + string settings
   Http.Utils.pas              URL/Base64/date helpers            (pure Pascal)
   Http.Url.pas                ParseUrl -> IUrl (parts + iterable query)
+  Http.Services.pas           /etc/services parser (TServiceDatabase), scheme -> port
+  Http.Logging.pas            IHttpLogger, console/file/memory/proc loggers, secret redaction
+  Http.Interceptors.pas       IHttpInterceptor + logging, headers, bearer-token, timing
   Http.Errors.pas             EHttpError, ECurlError, EHttpStatusError, ...
   Http.Headers.pas            THttpHeaders (case-insensitive, multi-value)
   Http.Cookies.pas            THttpCookieJar (RFC 6265 subset, thread-safe)
@@ -42,7 +46,7 @@ src/
   curl/
     Http.Curl.Native.pas      LOW LEVEL : cdecl callbacks, CURL*/slist owners
     Http.Curl.Transport.pas   HIGH LEVEL: TCurlHttpClient (IHttpTransport)
-examples/                     Example.Get / .Post / .Builder / .Upload
+examples/                     Example.Get / .Post / .Builder / .Upload / .Interceptors
 tests/
   RunUnitTests.dpr            no network, no libcurl needed
   RunIntegrationTests.dpr     libcurl + local echo server
@@ -116,5 +120,5 @@ copy z.dll my-project
   persistence and full RFC semantics use `SetCookieFile(path)` (libcurl's engine).
 * Configure a client before sharing it between threads; `Execute` itself is thread-safe.
 * Not included: async/multi interface, upload/download progress and cancel callbacks.
-* Validation status: the full suite (144 unit + 73 integration tests, 4 examples) was
+* Validation status: the full suite (191 unit + 89 integration tests, 5 examples) was
   executed with **FPC 3.2.2 on Linux/Windows x86-64** and Delphi 13 Version `37.0.57242.3601`. 

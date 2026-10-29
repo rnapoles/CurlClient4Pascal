@@ -15,7 +15,7 @@ interface
 
 uses
   SysUtils, Classes, Http.Utils, Http.Errors, Http.Headers, Http.Cookies, Http.Request,
-  Http.Response, Http.Options, Http.Transport;
+  Http.Response, Http.Options, Http.Transport, Http.Logging, Http.Interceptors;
 
 const
   DEFAULT_TEXT_CONTENT_TYPE = 'text/plain; charset=utf-8';
@@ -41,6 +41,15 @@ type
     function SetCookieFile(const Path: string): IHttpClient;
     function SetMaxResponseBytes(MaxBytes: Int64): IHttpClient;
     function SetHttpVersion(Value: THttpVersion): IHttpClient;
+    { Libcurl's wire trace. With a logger the trace goes to it (category 'curl',
+      debug level) instead of stderr. Secrets are masked unless SetRedactLogs(False). }
+    function SetVerbose(Enabled: Boolean): IHttpClient;
+    function SetLogger(const Value: IHttpLogger): IHttpClient;
+    function SetRedactLogs(Enabled: Boolean): IHttpClient;
+
+    { ---- interceptors (see Http.Interceptors) ---- }
+    function AddInterceptor(const Value: IHttpInterceptor): IHttpClient;
+    function ClearInterceptors: IHttpClient;
 
     { ---- default headers & cookies (set / get) ---- }
     function SetHeader(const Name, Value: string): IHttpClient;
@@ -95,6 +104,7 @@ type
     FOptions: THttpClientOptions;
     FHeaders: THttpHeaders;
     FCookies: THttpCookieJar;
+    FInterceptors: THttpInterceptors;
     function GetHeaders: THttpHeaders;
     function GetCookies: THttpCookieJar;
     function GetOptions: THttpClientOptions;
@@ -117,6 +127,11 @@ type
     function SetCookieFile(const Path: string): IHttpClient;
     function SetMaxResponseBytes(MaxBytes: Int64): IHttpClient;
     function SetHttpVersion(Value: THttpVersion): IHttpClient;
+    function SetVerbose(Enabled: Boolean): IHttpClient;
+    function SetLogger(const Value: IHttpLogger): IHttpClient;
+    function SetRedactLogs(Enabled: Boolean): IHttpClient;
+    function AddInterceptor(const Value: IHttpInterceptor): IHttpClient;
+    function ClearInterceptors: IHttpClient;
 
     function SetHeader(const Name, Value: string): IHttpClient;
     function AddHeader(const Name, Value: string): IHttpClient;
@@ -167,6 +182,10 @@ type
     function MaxResponseBytes(MaxBytes: Int64): IHttpClientBuilder;
     function HttpVersion(Value: THttpVersion): IHttpClientBuilder;
     function AutoDecompress(Enabled: Boolean): IHttpClientBuilder;
+    function Verbose(Enabled: Boolean): IHttpClientBuilder;
+    function Logger(const Value: IHttpLogger): IHttpClientBuilder;
+    function RedactLogs(Enabled: Boolean): IHttpClientBuilder;
+    function Interceptor(const Value: IHttpInterceptor): IHttpClientBuilder;
     function Header(const Name, Value: string): IHttpClientBuilder;
     function Cookie(const Name, Value: string; const Domain: string = ''): IHttpClientBuilder;
     function BearerToken(const Token: string): IHttpClientBuilder;
@@ -181,6 +200,7 @@ type
     FHeaders: THttpHeaders;
     FCookies: THttpCookieJar;
     FTransport: IHttpTransport;
+    FInterceptors: THttpInterceptors;
   public
     constructor Create;
     destructor Destroy; override;
@@ -196,6 +216,10 @@ type
     function MaxResponseBytes(MaxBytes: Int64): IHttpClientBuilder;
     function HttpVersion(Value: THttpVersion): IHttpClientBuilder;
     function AutoDecompress(Enabled: Boolean): IHttpClientBuilder;
+    function Verbose(Enabled: Boolean): IHttpClientBuilder;
+    function Logger(const Value: IHttpLogger): IHttpClientBuilder;
+    function RedactLogs(Enabled: Boolean): IHttpClientBuilder;
+    function Interceptor(const Value: IHttpInterceptor): IHttpClientBuilder;
     function Header(const Name, Value: string): IHttpClientBuilder;
     function Cookie(const Name, Value: string; const Domain: string = ''): IHttpClientBuilder;
     function BearerToken(const Token: string): IHttpClientBuilder;
@@ -329,6 +353,39 @@ begin
   Result := Self;
 end;
 
+function THttpClient.SetVerbose(Enabled: Boolean): IHttpClient;
+begin
+  FOptions.Verbose := Enabled;
+  Result := Self;
+end;
+
+function THttpClient.SetLogger(const Value: IHttpLogger): IHttpClient;
+begin
+  FOptions.Logger := Value;
+  Result := Self;
+end;
+
+function THttpClient.SetRedactLogs(Enabled: Boolean): IHttpClient;
+begin
+  FOptions.RedactLogs := Enabled;
+  Result := Self;
+end;
+
+function THttpClient.AddInterceptor(const Value: IHttpInterceptor): IHttpClient;
+begin
+  if Value = nil then
+    raise EHttpError.Create('AddInterceptor: interceptor must not be nil');
+  SetLength(FInterceptors, Length(FInterceptors) + 1);
+  FInterceptors[High(FInterceptors)] := Value;
+  Result := Self;
+end;
+
+function THttpClient.ClearInterceptors: IHttpClient;
+begin
+  SetLength(FInterceptors, 0);
+  Result := Self;
+end;
+
 function THttpClient.SetHeader(const Name, Value: string): IHttpClient;
 begin
   FHeaders.SetValue(Name, Value);
@@ -427,14 +484,49 @@ begin
   end;
 end;
 
+{ Tells every interceptor that the request failed (last added first). Errors
+  raised by the hooks themselves are swallowed so they cannot mask the original. }
+procedure NotifyError(const Chain: THttpInterceptors; const Request: IHttpRequest;
+  E: Exception; ElapsedMs: Int64);
+var
+  I: Integer;
+begin
+  for I := High(Chain) downto 0 do
+    try
+      Chain[I].OnError(Request, E, ElapsedMs);
+    except
+      // informational hook: ignore
+    end;
+end;
+
 function THttpClient.Execute(const Request: IHttpRequest): IHttpResponse;
 var
   Resolved: IHttpRequest;
   Opts: THttpClientOptions;
+  Chain: THttpInterceptors;
   CookieUrl: string;
+  I: Integer;
+  Started, Elapsed: Int64;
 begin
   Resolved := ResolveRequest(Request, Opts);
-  Result := FTransport.Execute(Resolved, Opts);
+  Chain := FInterceptors;                    // snapshot: later changes do not affect this call
+
+  for I := 0 to High(Chain) do
+    Chain[I].BeforeRequest(Resolved);
+
+  Started := TickCountMs;
+  try
+    Result := FTransport.Execute(Resolved, Opts);
+  except
+    on E: Exception do
+    begin
+      Elapsed := TickCountMs - Started;
+      NotifyError(Chain, Resolved, E, Elapsed);
+      raise;
+    end;
+  end;
+  Elapsed := TickCountMs - Started;
+
   // With CookieFile set libcurl's own engine owns cookie storage.
   if Opts.CookieFile = '' then
   begin
@@ -442,6 +534,9 @@ begin
     if CookieUrl = '' then CookieUrl := Resolved.Url;
     FCookies.StoreFromHeaders(CookieUrl, Result.Headers);
   end;
+
+  for I := High(Chain) downto 0 do
+    Chain[I].AfterResponse(Resolved, Result, Elapsed);
 end;
 
 function THttpClient.Get(const Url: string): IHttpResponse;
@@ -617,6 +712,33 @@ begin
   Result := Self;
 end;
 
+function THttpClientBuilder.Verbose(Enabled: Boolean): IHttpClientBuilder;
+begin
+  FOptions.Verbose := Enabled;
+  Result := Self;
+end;
+
+function THttpClientBuilder.Logger(const Value: IHttpLogger): IHttpClientBuilder;
+begin
+  FOptions.Logger := Value;
+  Result := Self;
+end;
+
+function THttpClientBuilder.RedactLogs(Enabled: Boolean): IHttpClientBuilder;
+begin
+  FOptions.RedactLogs := Enabled;
+  Result := Self;
+end;
+
+function THttpClientBuilder.Interceptor(const Value: IHttpInterceptor): IHttpClientBuilder;
+begin
+  if Value = nil then
+    raise EHttpError.Create('Interceptor must not be nil');
+  SetLength(FInterceptors, Length(FInterceptors) + 1);
+  FInterceptors[High(FInterceptors)] := Value;
+  Result := Self;
+end;
+
 function THttpClientBuilder.Header(const Name, Value: string): IHttpClientBuilder;
 begin
   FHeaders.SetValue(Name, Value);
@@ -654,6 +776,7 @@ begin
   C.FOptions := FOptions;
   C.FHeaders.Assign(FHeaders);
   C.FCookies.Assign(FCookies);
+  C.FInterceptors := FInterceptors;   // shared (stateless or thread-safe) instances
 end;
 
 end.

@@ -47,6 +47,8 @@ function TryParseStatusLine(const Line: string; out HttpVersion: string;
   out Code: Integer; out Reason: string): Boolean;
 function TryParseHttpDate(const S: string; out UtcValue: TDateTime): Boolean;
 function NowUtc: TDateTime;
+{ Monotonic millisecond counter for measuring elapsed time (not a wall clock). }
+function TickCountMs: Int64;
 { MIME type from a file name's extension; 'application/octet-stream' if unknown. }
 function GuessContentType(const FileName: string): string;
 function ParseIntDef(const S: string; DefaultValue: Integer): Integer;
@@ -54,7 +56,7 @@ function ParseIntDef(const S: string; DefaultValue: Integer): Integer;
 implementation
 
 uses
-  {$IFDEF FPC}DateUtils{$ELSE}System.DateUtils, System.IOUtils{$ENDIF};
+  {$IFDEF FPC}DateUtils{$ELSE}System.DateUtils, System.IOUtils, System.Classes{$ENDIF};
 
 const
   HexChars = '0123456789ABCDEF';
@@ -519,6 +521,15 @@ begin
   if Result = '' then
     Result := GetCurrentDir;
   Result := IncludeTrailingPathDelimiter(Result);
+end;
+
+function TickCountMs: Int64;
+begin
+  {$IFDEF FPC}
+  Result := GetTickCount64;               // SysUtils (FPC)
+  {$ELSE}
+  Result := TThread.GetTickCount64;       // System.Classes (Delphi, all platforms)
+  {$ENDIF}
 end;
 
 function NowUtc: TDateTime;

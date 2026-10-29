@@ -20,7 +20,7 @@ type
   TCurlHttpClient = class(TInterfacedObject, IHttpTransport)
   private
     procedure ConfigureConnection(Easy: TCurlEasy; const Request: IHttpRequest;
-      const Options: THttpClientOptions);
+      const Options: THttpClientOptions; DebugSink: TCurlDebugSink);
     procedure ConfigureMethodAndBody(Easy: TCurlEasy; const Request: IHttpRequest;
       Source: TCurlBodySource; Mime: TCurlMime);
     procedure ApplyHttpVersion(Easy: TCurlEasy; Version: THttpVersion);
@@ -73,7 +73,8 @@ end;
 
 
 procedure TCurlHttpClient.ConfigureConnection(Easy: TCurlEasy;
-  const Request: IHttpRequest; const Options: THttpClientOptions);
+  const Request: IHttpRequest; const Options: THttpClientOptions;
+  DebugSink: TCurlDebugSink);
 begin
   Easy.SetStr(CURLOPT_URL, Request.Url);
 
@@ -118,7 +119,16 @@ begin
   end;
 
   if Options.Verbose then
+  begin
+    // With a logger the trace is routed to it; without one libcurl keeps
+    // printing to stderr.
+    if DebugSink <> nil then
+    begin
+      Easy.SetPtr(CURLOPT_DEBUGFUNCTION, Pointer(@CurlDebugCallback));
+      Easy.SetPtr(CURLOPT_DEBUGDATA, Pointer(DebugSink));
+    end;
     Easy.SetBool(CURLOPT_VERBOSE, True);
+  end;
 end;
 
 { Raw body: an in-memory buffer, a caller-owned stream, or a local file. }
@@ -268,6 +278,7 @@ var
   HeaderSink: TCurlHeaderSink;
   Source: TCurlBodySource;
   Mime: TCurlMime;
+  DebugSink: TCurlDebugSink;
   Code: CURLcode;
 begin
   // Strict ownership chain: every native resource is released in `finally`,
@@ -282,10 +293,13 @@ begin
         try
           Source := nil;
           Mime := nil;
+          DebugSink := nil;
           try
             Source := CreateBodySource(Request);         // raw body / file (or nil)
             Mime := CreateMime(Easy, Request);           // multipart (or nil)
-            ConfigureConnection(Easy, Request, Options);
+            if Options.Verbose and (Options.Logger <> nil) then
+              DebugSink := TCurlDebugSink.Create(Options.Logger, Options.RedactLogs);
+            ConfigureConnection(Easy, Request, Options, DebugSink);
             ConfigureMethodAndBody(Easy, Request, Source, Mime);
             ConfigureHeaders(Easy, Request, HeaderList);
 
@@ -302,6 +316,7 @@ begin
             Result := BuildResponse(Easy, BodySink, HeaderSink,
               Request.ResponseStream <> nil);
           finally
+            DebugSink.Free;
             Mime.Free;                                   // curl_mime_free + close files
             Source.Free;
           end;

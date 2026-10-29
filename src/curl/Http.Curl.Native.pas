@@ -17,7 +17,7 @@ unit Http.Curl.Native;
 interface
 
 uses
-  SysUtils, Classes, libcurl, Http.Errors, Http.Utils, Http.Headers;
+  SysUtils, Classes, libcurl, Http.Errors, Http.Utils, Http.Headers, Http.Logging;
 
 type
   TCurlEasy = class;
@@ -66,6 +66,21 @@ type
     property HttpVersion: string read FHttpVersion;
     property StatusCode: Integer read FStatusCode;
     property Reason: string read FReason;
+  end;
+
+  { Receives libcurl's verbose trace (CURLOPT_DEBUGDATA) and forwards it to an
+    IHttpLogger instead of stderr. Informational text ('* '), request headers
+    ('> ') and response headers ('< ') are logged line by line at debug level,
+    category 'curl'. Body data is NOT logged (can be huge or binary). With
+    Redact set, values of sensitive headers (Authorization, Cookie, ...) are
+    replaced by ***. }
+  TCurlDebugSink = class
+  private
+    FLogger: IHttpLogger;
+    FRedact: Boolean;
+  public
+    constructor Create(const ALogger: IHttpLogger; ARedact: Boolean);
+    procedure Process(InfoType: Integer; Data: Pointer; Size: NativeUInt);
   end;
 
   { Supplies upload data (CURLOPT_READDATA / SEEKDATA, or a MIME part):
@@ -156,6 +171,9 @@ function CurlReadCallback(Buffer: Pointer; Size, NItems: NativeUInt;
   UserData: Pointer): NativeUInt; cdecl;
 function CurlSeekCallback(UserData: Pointer; Offset: curl_off_t;
   Origin: Integer): Integer; cdecl;
+{ curl_debug_callback; InfoType is a curl_infotype (0 text, 1 header in, 2 header out). }
+function CurlDebugCallback(Handle: Pointer; InfoType: Integer; Data: Pointer;
+  Size: NativeUInt; UserData: Pointer): Integer; cdecl;
 
 { ---- helpers ---- }
 procedure EnsureCurlInitialized;
@@ -293,6 +311,48 @@ begin
   ProcessLine(BytesToString(B));
 end;
 
+constructor TCurlDebugSink.Create(const ALogger: IHttpLogger; ARedact: Boolean);
+begin
+  inherited Create;
+  FLogger := ALogger;
+  FRedact := ARedact;
+end;
+
+procedure TCurlDebugSink.Process(InfoType: Integer; Data: Pointer; Size: NativeUInt);
+const
+  INFO_TEXT = 0;
+  INFO_HEADER_IN = 1;
+  INFO_HEADER_OUT = 2;
+var
+  Prefix, Text, Line: string;
+  B: TBytes;
+  Start, I: Integer;
+begin
+  if (FLogger = nil) or (Size = 0) or not FLogger.IsEnabled(llDebug) then Exit;
+  case InfoType of
+    INFO_TEXT:       Prefix := '* ';
+    INFO_HEADER_IN:  Prefix := '< ';
+    INFO_HEADER_OUT: Prefix := '> ';
+  else
+    Exit;                              // data / TLS payload: not logged
+  end;
+  SetLength(B, Size);
+  Move(Data^, B[0], Size);
+  Text := BytesToString(B);
+  Start := 1;
+  for I := 1 to Length(Text) + 1 do
+    if (I > Length(Text)) or (Text[I] = #10) then
+    begin
+      Line := Copy(Text, Start, I - Start);
+      Start := I + 1;
+      while (Line <> '') and (Line[Length(Line)] = #13) do
+        SetLength(Line, Length(Line) - 1);
+      if Line = '' then Continue;      // blank line that ends a header block
+      if FRedact and (InfoType <> INFO_TEXT) then Line := RedactHeaderLine(Line);
+      FLogger.Log(llDebug, 'curl', Prefix + Line);
+    end;
+end;
+
 constructor TCurlBodySource.Create(const AData: TBytes);
 begin
   inherited Create;
@@ -427,6 +487,18 @@ begin
       Result := CURL_SEEKFUNC_OK;
   except
     Result := CURL_SEEKFUNC_FAIL;
+  end;
+end;
+
+function CurlDebugCallback(Handle: Pointer; InfoType: Integer; Data: Pointer;
+  Size: NativeUInt; UserData: Pointer): Integer; cdecl;
+begin
+  Result := 0;                         // the return value is ignored by libcurl
+  try
+    if UserData <> nil then
+      TCurlDebugSink(UserData).Process(InfoType, Data, Size);
+  except
+    // never let an exception cross the C boundary
   end;
 end;
 

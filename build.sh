@@ -22,7 +22,7 @@ FLAGS="-Mdelphi -O2 -vewn -Fi$ROOT/src -Fu$ROOT/src -Fu$ROOT/src/curl -Fu$ROOT/v
 -Fu$ROOT/tests/support -Fu$ROOT/tests/unit -Fu$ROOT/tests/integration \
 -FU$OUT/units -FE$OUT/bin"
 
-for prog in examples/Example.Get.dpr examples/Example.Post.dpr examples/Example.Builder.dpr examples/Example.Upload.dpr \
+for prog in examples/Example.Get.dpr examples/Example.Post.dpr examples/Example.Builder.dpr examples/Example.Upload.dpr examples/Example.Interceptors.dpr \
             tests/RunUnitTests.dpr tests/RunIntegrationTests.dpr; do
   echo "Building $prog"
   # shellcheck disable=SC2086
